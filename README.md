@@ -16,7 +16,7 @@ This project does the unglamorous work of handling that correctly — login, coo
 
 - 🔐 **Handles HedgeDoc 1.x's real auth model** (session cookies, not tokens)
 - 🔁 **Auto re-login on session expiry** — no manual cookie refresh needed
-- 🛠️ **6 MCP tools**: create, read, update, info, whoami, history
+- 🛠️ **6 MCP tools**: create, read, update (reported as unsupported), info, whoami, history
 - 🐍 **Standalone Python client** (`hedgedoc_mcp.client.HedgeDocClient`) usable outside MCP too
 - ✅ **Fully tested** — mocked HTTP, no live server required to run the test suite
 - 📦 **Works with any MCP client**: Claude Code, Codex, Hermes, Cursor, custom clients
@@ -146,7 +146,7 @@ This is a standard stdio MCP server. Point your client at `uvx hedgedoc-mcp` (or
 |---|---|
 | `hedgedoc_create_note` | Create a new note (optionally with a custom URL alias). Returns the note ID and URL. |
 | `hedgedoc_read_note` | Fetch a note's raw markdown content by ID or alias. |
-| `hedgedoc_update_note` | Overwrite an existing note's content (alias-based notes only — see [Limitations](docs/LIMITATIONS.md)). |
+| `hedgedoc_update_note` | Reports that HedgeDoc 1.x HTTP note updates are unsupported; it does not modify the note. |
 | `hedgedoc_note_info` | Get a note's title, description, view count, and timestamps. |
 | `hedgedoc_whoami` | Verify the session is valid and show the logged-in user. |
 | `hedgedoc_list_history` | List the logged-in user's recently viewed/pinned notes. |
@@ -173,7 +173,7 @@ info = client.note_info(result.note_id)
 HedgeDoc 1.x's HTTP API is genuinely limited compared to newer forks — see [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for the full rundown, including:
 
 - No API tokens (session-cookie auth only)
-- No generic "update note by ID" endpoint (alias-based notes only)
+- No HTTP note-update endpoint
 - No delete endpoint over HTTP
 
 These are constraints of the HedgeDoc 1.x server itself, not this client — the docs explain the workarounds this project uses and what genuinely isn't possible.

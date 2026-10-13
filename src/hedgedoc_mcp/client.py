@@ -181,35 +181,18 @@ class HedgeDocClient:
         return resp.text
 
     def update_note(self, note_id: str, content: str) -> None:
-        """Overwrite a note's content.
+        """Raise because HedgeDoc 1.x has no supported HTTP update endpoint.
 
-        HedgeDoc 1.x has no REST PATCH/PUT endpoint for note content --
-        real-time edits happen over the Socket.IO/realtime channel used by
-        the web editor. As a practical workaround for automation, this
-        recreates the note at the same alias when FreeURL mode is enabled
-        (POST /new/{alias} overwrites an existing note at that alias).
-        If the note was NOT created with a custom alias, this will fail --
-        see docs/LIMITATIONS.md for the full explanation and alternatives.
+        The browser edits through its Socket.IO collaborative-editing
+        protocol. ``POST /new/{alias}`` only creates a new alias; it returns
+        HTTP 409 when the alias already exists and does not alter that note.
         """
-        resp = self._session.post(
-            f"{self.base_url}/new/{note_id}",
-            data=content.encode("utf-8"),
-            headers={"Content-Type": "text/markdown"},
-            allow_redirects=False,
-            timeout=self.timeout,
+        del note_id, content
+        raise HedgeDocError(
+            "Updating notes is unsupported: HedgeDoc 1.x has no HTTP update endpoint. "
+            "POST /new/{alias} creates notes only and returns HTTP 409 for an existing alias. "
+            "See docs/LIMITATIONS.md."
         )
-        if resp.status_code != 302:
-            raise HedgeDocError(
-                f"Could not update note '{note_id}' (HTTP {resp.status_code}). "
-                "In-place updates via HTTP only work for notes created with a "
-                "custom alias under FreeURL mode. See docs/LIMITATIONS.md."
-            )
-        location = resp.headers.get("Location", "")
-        if location in ("", "/", self.base_url, f"{self.base_url}/"):
-            raise SessionExpiredError(
-                "Note update redirected to the home page instead of the note. "
-                "This usually means the session is expired. Call login() again."
-            )
 
     def note_info(self, note_id: str) -> NoteInfo:
         """Fetch metadata: title, description, viewcount, timestamps."""

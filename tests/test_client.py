@@ -161,6 +161,39 @@ def test_create_note_with_alias_uses_alias_path(client, mocker):
     assert args[0] == "https://md.example.com/new/my-alias"
 
 
+def test_creating_existing_alias_conflicts_and_preserves_original_content(client, mocker):
+    notes = {}
+
+    def post(url, data, **_kwargs):
+        alias = url.rsplit("/", 1)[-1]
+        if alias in notes:
+            return _FakeResponse(status_code=409)
+        notes[alias] = data.decode("utf-8")
+        return _FakeResponse(status_code=302, headers={"Location": f"/{alias}"})
+
+    def get(url, **_kwargs):
+        note_id = url.removesuffix("/download").rsplit("/", 1)[-1]
+        return _FakeResponse(status_code=200, text=notes[note_id])
+
+    mocker.patch.object(client._session, "post", side_effect=post)
+    mocker.patch.object(client._session, "get", side_effect=get)
+
+    client.create_note("# Original", alias="existing-alias")
+    with pytest.raises(HedgeDocError, match="Unexpected status 409"):
+        client.create_note("# Replacement", alias="existing-alias")
+
+    assert client.read_note("existing-alias") == "# Original"
+
+
+def test_update_note_is_unsupported_without_making_an_http_request(client, mocker):
+    post = mocker.patch.object(client._session, "post")
+
+    with pytest.raises(HedgeDocError, match="Updating notes is unsupported"):
+        client.update_note("my-alias", "# Replacement")
+
+    post.assert_not_called()
+
+
 def test_read_note_success(client, mocker):
     mocker.patch.object(
         client._session, "get", return_value=_FakeResponse(status_code=200, text="# Content")

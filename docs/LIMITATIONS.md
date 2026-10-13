@@ -31,23 +31,16 @@ expiry again.
 HedgeDoc 1.x's real-time collaborative editing happens over a Socket.IO
 channel, not a REST endpoint. There is no `PUT /api/notes/{id}` or similar.
 
-**Workaround this project uses:** `POST /new/{alias}` will overwrite an
-existing note *if that note was created at a custom alias under FreeURL
-mode* — HedgeDoc treats "create at an alias that already exists" as an
-overwrite. This means:
+`POST /new/{alias}` is a creation endpoint, not an update workaround. With
+FreeURL enabled, the first request for an alias creates the note; a second
+request for that alias returns **HTTP 409 Conflict** and leaves the original
+content unchanged.
 
-- ✅ `hedgedoc_update_note` **works** for notes created with `alias=...`
-- ❌ `hedgedoc_update_note` **does not work** for notes created without an
-  alias (the common case — a random-ID note like `/AbC123XyZ`)
-
-**If you need reliable updates:** always pass an `alias` when creating a
-note you expect to update later. There is no supported way to update a
-random-ID note over HTTP; it can only be edited live in the browser (or via
-the Socket.IO realtime protocol, which is out of scope for this project).
-
-**If your instance doesn't have FreeURL mode enabled:** even alias-based
-creation/update will fail. Ask your HedgeDoc admin to set
-`CMD_ALLOW_FREEURL=true`.
+`hedgedoc_update_note` therefore reports a clear unsupported-operation error
+without issuing an HTTP request. Neither alias nor random-ID notes can be
+updated through HedgeDoc 1.x's HTTP surface. They can be edited in the
+browser, which uses the Socket.IO collaborative-editing protocol; supporting
+that protocol is outside this HTTP client's current scope.
 
 ## No delete endpoint
 
@@ -91,7 +84,7 @@ expires.
 | Create note (random ID) | ✅ | `hedgedoc_create_note` |
 | Create note (custom alias) | ✅* | Requires `CMD_ALLOW_FREEURL=true` on the server |
 | Read note content | ✅ | Public endpoint, no auth needed |
-| Update note (alias-based) | ✅* | Only for alias-created notes, requires FreeURL |
+| Update note (alias-based) | ❌ | `POST /new/{alias}` returns 409 when it already exists |
 | Update note (random-ID) | ❌ | Not possible over HTTP in HedgeDoc 1.x |
 | Delete note | ❌ | Only via the web UI, not exposed by this project |
 | Note metadata (title, views, dates) | ✅ | `hedgedoc_note_info` |

@@ -3,7 +3,7 @@
 Exposes:
     hedgedoc_create_note   -- create a new note, returns its URL
     hedgedoc_read_note     -- fetch a note's raw markdown
-    hedgedoc_update_note   -- overwrite a note (alias-based notes only)
+    hedgedoc_update_note   -- reports that HTTP updates are unsupported
     hedgedoc_note_info     -- title, timestamps, viewcount for a note
     hedgedoc_whoami        -- verify the current session / show logged-in user
     hedgedoc_list_history  -- recently viewed/pinned notes for the logged-in user
@@ -57,9 +57,9 @@ async def list_tools() -> list[Tool]:
                 "Create a new note on the HedgeDoc instance. "
                 "Returns JSON with two fields: 'note_id' (the unique identifier / URL slug) "
                 "and 'url' (the full URL where the note can be viewed or shared). "
-                "Use `alias` to assign a human-readable slug such as 'q3-research-notes' — "
-                "alias-based notes can later be overwritten with hedgedoc_update_note. "
-                "Notes created without an alias get a random ID and cannot be updated over HTTP. "
+                "Use `alias` to assign a human-readable slug such as 'q3-research-notes'. "
+                "HedgeDoc 1.x does not support updating either aliases or random-ID notes "
+                "over HTTP. "
                 "Alias support requires FreeURL mode enabled on the server "
                 "(CMD_ALLOW_FREEURL=true)."
             ),
@@ -79,7 +79,6 @@ async def list_tools() -> list[Tool]:
                         "description": (
                             "Optional custom URL slug, e.g. 'meeting-2026-08-16' or 'q3-research'. "
                             "Must be URL-safe (letters, digits, hyphens). "
-                            "Required if you intend to update this note later. "
                             "Requires FreeURL mode on the server."
                         ),
                     },
@@ -112,13 +111,10 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="hedgedoc_update_note",
             description=(
-                "Overwrite the entire content of an existing note. "
-                "IMPORTANT: this only works for notes that were originally created with a custom "
-                "alias (via hedgedoc_create_note's `alias` parameter). "
-                "HedgeDoc 1.x has no REST update endpoint for random-ID notes — "
-                "those can only be edited live in the browser. "
-                "If the target note was created without an alias, this call will fail. "
-                "The update is a full overwrite — partial/patch updates are not supported."
+                "Unsupported operation. HedgeDoc 1.x has no HTTP endpoint to update note content. "
+                "Its browser editor uses a Socket.IO collaborative-editing protocol instead. "
+                "POST /new/{alias} does not overwrite an existing alias: it returns HTTP 409. "
+                "This tool returns a clear error and does not modify the note."
             ),
             inputSchema={
                 "type": "object",
@@ -126,15 +122,15 @@ async def list_tools() -> list[Tool]:
                     "note_id": {
                         "type": "string",
                         "description": (
-                            "The custom alias of the note to overwrite (e.g. 'my-meeting-notes'). "
-                            "Random-ID notes cannot be updated over HTTP."
+                            "The note ID or alias. This is retained for API compatibility; "
+                            "the operation is unsupported."
                         ),
                     },
                     "content": {
                         "type": "string",
                         "description": (
-                            "New full markdown content. "
-                            "Replaces the note's current content entirely."
+                            "Requested markdown content. This is retained for API compatibility; "
+                            "the operation is unsupported."
                         ),
                     },
                 },
