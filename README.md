@@ -8,7 +8,7 @@ HedgeDoc 1.x has no API token system, so this server handles the real auth model
 
 ## Why this exists
 
-[HedgeDoc](https://hedgedoc.org) is a great self-hosted, open-source, collaborative markdown editor. But if you want an AI agent to write notes to it programmatically, you hit a wall immediately: **HedgeDoc 1.x has no API tokens.** Every write endpoint (`POST /new`, etc.) requires an authenticated browser-style session, tracked via an Express `connect.sid` cookie.
+[HedgeDoc](https://hedgedoc.org) is a great self-hosted, open-source, collaborative markdown editor. But if you want an AI agent to write notes to it programmatically, you hit a wall immediately: **HedgeDoc 1.x has no API tokens.** Every write endpoint (`POST /new`, etc.) requires an authenticated browser-style session, tracked via the Express session cookie configured by the instance (normally `connect.sid`).
 
 This project does the unglamorous work of handling that correctly — login, cookie storage, automatic re-authentication on expiry — and wraps it in an MCP server so any agent can just call `hedgedoc_create_note` and not think about any of it.
 
@@ -74,11 +74,14 @@ Alternatively, set `HEDGEDOC_EMAIL` + `HEDGEDOC_PASSWORD` directly and the serve
 ```bash
 export HEDGEDOC_URL=https://md.example.com
 export HEDGEDOC_SESSION_COOKIE=s%3A...          # from step 2, OR:
+export HEDGEDOC_SESSION_COOKIE_NAME=connect.sid  # only when your instance uses another name
 export HEDGEDOC_EMAIL=you@example.com            # for auto re-login
 export HEDGEDOC_PASSWORD=your-password
 ```
 
 At minimum you need `HEDGEDOC_URL` plus either the cookie or the email+password pair. Setting both is recommended — the cookie is used as a fast path, and email/password is the automatic fallback whenever it expires.
+
+`HEDGEDOC_SESSION_COOKIE_NAME` defaults to `connect.sid`. Set it to the valid cookie name configured by your HedgeDoc instance (for example, `hedgedoc.sid`) so both login and manually supplied cookies use the right session.
 
 ### 4. Wire it into your agent
 

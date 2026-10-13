@@ -6,7 +6,9 @@ bare `hedgedoc-mcp` CLI invocation -- no code changes needed per agent.
 
 Environment variables:
     HEDGEDOC_URL              Base URL of your HedgeDoc instance (required)
-    HEDGEDOC_SESSION_COOKIE   A pre-obtained connect.sid value (optional)
+    HEDGEDOC_SESSION_COOKIE   A pre-obtained session cookie value (optional)
+    HEDGEDOC_SESSION_COOKIE_NAME
+                              Session cookie name (optional; default: connect.sid)
     HEDGEDOC_EMAIL            Login email (optional, used for auto re-login)
     HEDGEDOC_PASSWORD         Login password (optional, used for auto re-login)
 
@@ -24,7 +26,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .client import HedgeDocClient, SessionExpiredError
+from .client import (
+    DEFAULT_SESSION_COOKIE_NAME,
+    HedgeDocClient,
+    HedgeDocError,
+    SessionExpiredError,
+    validate_session_cookie_name,
+)
 
 
 class ConfigError(RuntimeError):
@@ -37,6 +45,7 @@ class Config:
     session_cookie: str | None
     email: str | None
     password: str | None
+    session_cookie_name: str = DEFAULT_SESSION_COOKIE_NAME
 
     @classmethod
     def from_env(cls) -> Config:
@@ -48,6 +57,9 @@ class Config:
             )
 
         cookie = os.environ.get("HEDGEDOC_SESSION_COOKIE", "").strip() or None
+        cookie_name = os.environ.get(
+            "HEDGEDOC_SESSION_COOKIE_NAME", DEFAULT_SESSION_COOKIE_NAME
+        ).strip()
         email = os.environ.get("HEDGEDOC_EMAIL", "").strip() or None
         password = os.environ.get("HEDGEDOC_PASSWORD", "").strip() or None
 
@@ -57,7 +69,18 @@ class Config:
                 "or both HEDGEDOC_EMAIL and HEDGEDOC_PASSWORD."
             )
 
-        return cls(base_url=base_url, session_cookie=cookie, email=email, password=password)
+        try:
+            validate_session_cookie_name(cookie_name)
+        except HedgeDocError as e:
+            raise ConfigError(f"Invalid HEDGEDOC_SESSION_COOKIE_NAME: {e}") from e
+
+        return cls(
+            base_url=base_url,
+            session_cookie=cookie,
+            email=email,
+            password=password,
+            session_cookie_name=cookie_name,
+        )
 
 
 def build_client(config: Config) -> HedgeDocClient:
@@ -66,7 +89,7 @@ def build_client(config: Config) -> HedgeDocClient:
     Tries the session cookie first (fast path, no login round-trip).
     Falls back to email/password login if the cookie is missing or expired.
     """
-    client = HedgeDocClient(config.base_url)
+    client = HedgeDocClient(config.base_url, session_cookie_name=config.session_cookie_name)
 
     if config.session_cookie:
         client.set_session_cookie(config.session_cookie)
@@ -90,6 +113,7 @@ def build_client(config: Config) -> HedgeDocClient:
 # -- CLI helper for obtaining a session cookie -----------------------------
 
 ENV_COOKIE_LINE = re.compile(r"^HEDGEDOC_SESSION_COOKIE=.*$", re.MULTILINE)
+ENV_COOKIE_NAME_LINE = re.compile(r"^HEDGEDOC_SESSION_COOKIE_NAME=.*$", re.MULTILINE)
 
 
 def cli_login() -> None:
@@ -108,6 +132,11 @@ def cli_login() -> None:
         "--password", default=os.environ.get("HEDGEDOC_PASSWORD"), help="Login password"
     )
     parser.add_argument(
+        "--session-cookie-name",
+        default=os.environ.get("HEDGEDOC_SESSION_COOKIE_NAME", DEFAULT_SESSION_COOKIE_NAME),
+        help="HedgeDoc session cookie name (default: connect.sid)",
+    )
+    parser.add_argument(
         "--write-env",
         metavar="PATH",
         help="Write/update HEDGEDOC_SESSION_COOKIE in this .env file",
@@ -124,11 +153,17 @@ def cli_login() -> None:
         )
         sys.exit(1)
 
-    client = HedgeDocClient(args.url)
+    try:
+        client = HedgeDocClient(args.url, session_cookie_name=args.session_cookie_name)
+    except HedgeDocError as e:
+        print(f"Error: invalid session cookie name: {e}", file=sys.stderr)
+        sys.exit(1)
     client.login(args.email, args.password)
     cookie = client.get_session_cookie(encoded=True)
 
     print(f"HEDGEDOC_SESSION_COOKIE={cookie}")
+    if args.session_cookie_name != DEFAULT_SESSION_COOKIE_NAME:
+        print(f"HEDGEDOC_SESSION_COOKIE_NAME={args.session_cookie_name}")
 
     if args.write_env:
         path = Path(args.write_env)
@@ -137,6 +172,16 @@ def cli_login() -> None:
         if ENV_COOKIE_LINE.search(text):
             text = ENV_COOKIE_LINE.sub(new_line, text)
         else:
-            text = text.rstrip("\n") + f"\n{new_line}\n"
+            if text and not text.endswith("\n"):
+                text += "\n"
+            text += f"{new_line}\n"
+        if args.session_cookie_name != DEFAULT_SESSION_COOKIE_NAME:
+            name_line = f"HEDGEDOC_SESSION_COOKIE_NAME={args.session_cookie_name}"
+            if ENV_COOKIE_NAME_LINE.search(text):
+                text = ENV_COOKIE_NAME_LINE.sub(name_line, text)
+            else:
+                if text and not text.endswith("\n"):
+                    text += "\n"
+                text += f"{name_line}\n"
         path.write_text(text)
         print(f"Written to {path}", file=sys.stderr)

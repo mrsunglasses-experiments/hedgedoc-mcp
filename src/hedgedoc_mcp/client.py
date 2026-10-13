@@ -2,9 +2,9 @@
 
 HedgeDoc 1.x (the widely self-hosted version, as opposed to newer forks)
 has NO API token system. Every write endpoint requires an authenticated
-session, identified by the `connect.sid` cookie that Express issues on
-login. This module wraps that reality behind a clean interface so callers
-(the MCP server, the CLI, tests) never touch raw cookies directly.
+session, identified by the cookie name configured by the instance (normally
+`connect.sid`) that Express issues on login. This module hides that detail
+from callers (the MCP server, the CLI, and tests).
 
 Endpoints used (from HedgeDoc's own OpenAPI spec, version 1.11.1):
     POST /login                  -- email+password login, sets connect.sid
@@ -19,10 +19,14 @@ Endpoints used (from HedgeDoc's own OpenAPI spec, version 1.11.1):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from urllib.parse import quote, unquote
 
 import requests
+
+DEFAULT_SESSION_COOKIE_NAME = "connect.sid"
+_COOKIE_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 
 
 class HedgeDocError(RuntimeError):
@@ -35,6 +39,13 @@ class SessionExpiredError(HedgeDocError):
     Callers should catch this and trigger a re-login (via `login()`) rather
     than treating it as a generic failure.
     """
+
+
+def validate_session_cookie_name(cookie_name: str) -> str:
+    """Return a valid HTTP cookie name, or raise ``HedgeDocError``."""
+    if not _COOKIE_NAME_RE.fullmatch(cookie_name):
+        raise HedgeDocError("Session cookie name must contain only RFC 6265 token characters.")
+    return cookie_name
 
 
 @dataclass
@@ -65,9 +76,15 @@ class HedgeDocClient:
         content = client.read_note(result.note_id)
     """
 
-    def __init__(self, base_url: str, timeout: int = 20):
+    def __init__(
+        self,
+        base_url: str,
+        timeout: int = 20,
+        session_cookie_name: str = DEFAULT_SESSION_COOKIE_NAME,
+    ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.session_cookie_name = validate_session_cookie_name(session_cookie_name)
         self._session = requests.Session()
 
     # -- Auth -----------------------------------------------------------
@@ -84,7 +101,7 @@ class HedgeDocClient:
             allow_redirects=False,
             timeout=self.timeout,
         )
-        cookie = self._session.cookies.get("connect.sid")
+        cookie = self._session.cookies.get(self.session_cookie_name)
         if not cookie:
             raise HedgeDocError(
                 f"Login failed (HTTP {resp.status_code}). Check that email/password "
@@ -102,11 +119,11 @@ class HedgeDocClient:
         """
         value = unquote(cookie_value)
         domain = self.base_url.split("//", 1)[-1].split("/", 1)[0]
-        self._session.cookies.set("connect.sid", value, domain=domain)
+        self._session.cookies.set(self.session_cookie_name, value, domain=domain)
 
     def get_session_cookie(self, encoded: bool = True) -> str | None:
         """Return the currently installed session cookie value."""
-        raw = self._session.cookies.get("connect.sid")
+        raw = self._session.cookies.get(self.session_cookie_name)
         if raw is None:
             return None
         return quote(raw, safe="") if encoded else raw

@@ -52,6 +52,7 @@ This project has three layers, each independently usable:
                     │ Config.from_env()      │
                     │ reads HEDGEDOC_URL,    │
                     │ _SESSION_COOKIE,       │
+                    │ _SESSION_COOKIE_NAME,  │
                     │ _EMAIL, _PASSWORD      │
                     └───────────┬────────────┘
                                 │

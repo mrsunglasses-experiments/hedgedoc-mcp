@@ -44,6 +44,22 @@ def test_login_success(client, mocker):
     assert kwargs["data"] == {"email": "user@example.com", "password": "hunter2"}
 
 
+def test_login_success_with_custom_session_cookie_name(mocker):
+    client = HedgeDocClient("https://md.example.com", session_cookie_name="hedgedoc.sid")
+    mocker.patch.object(client._session, "post", return_value=_FakeResponse(status_code=302))
+    client._session.cookies.set("hedgedoc.sid", "abc123", domain="md.example.com")
+
+    assert client.login("user@example.com", "hunter2") == "abc123"
+
+
+def test_login_rejects_wrong_session_cookie_name(client, mocker):
+    mocker.patch.object(client._session, "post", return_value=_FakeResponse(status_code=302))
+    client._session.cookies.set("hedgedoc.sid", "abc123", domain="md.example.com")
+
+    with pytest.raises(HedgeDocError, match="Login failed"):
+        client.login("user@example.com", "hunter2")
+
+
 def test_login_failure_raises(client, mocker):
     mocker.patch.object(client._session, "post", return_value=_FakeResponse(status_code=401))
     with pytest.raises(HedgeDocError, match="Login failed"):
@@ -58,6 +74,20 @@ def test_set_session_cookie_decodes_urlencoded(client):
 def test_set_session_cookie_accepts_raw(client):
     client.set_session_cookie("plain-value-no-percent")
     assert client.get_session_cookie(encoded=False) == "plain-value-no-percent"
+
+
+def test_set_session_cookie_uses_custom_cookie_name():
+    client = HedgeDocClient("https://md.example.com", session_cookie_name="hedgedoc.sid")
+    client.set_session_cookie("s%3AaBc123")
+
+    assert client.get_session_cookie(encoded=False) == "s:aBc123"
+    assert client._session.cookies.get("connect.sid") is None
+
+
+@pytest.mark.parametrize("cookie_name", ["", "contains space", "connect/sid"])
+def test_rejects_invalid_session_cookie_name(cookie_name):
+    with pytest.raises(HedgeDocError, match="cookie name"):
+        HedgeDocClient("https://md.example.com", session_cookie_name=cookie_name)
 
 
 def test_whoami_success(client, mocker):
