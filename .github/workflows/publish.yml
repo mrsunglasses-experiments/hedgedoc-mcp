@@ -19,6 +19,14 @@ jobs:
       - name: Check distribution metadata
         run: uvx twine check dist/*
 
+      - name: Check the release tag matches the package version
+        run: |
+          expected="dist/hedgedoc_mcp-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+          if [ ! -f "$expected" ]; then
+            echo "::error::Release tag $GITHUB_REF_NAME doesn't match the built package ($(ls dist | tr '\n' ' ')). Bump __version__ in src/hedgedoc_mcp/__init__.py."
+            exit 1
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist
