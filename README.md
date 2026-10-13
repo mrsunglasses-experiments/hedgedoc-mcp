@@ -16,9 +16,9 @@ This project does the unglamorous work of handling that correctly — login, coo
 
 - 🔐 **Handles HedgeDoc 1.x's real auth model** (session cookies, not tokens)
 - 🔁 **Auto re-login on session expiry** — no manual cookie refresh needed
-- 🛠️ **6 MCP tools**: create, read, update (reported as unsupported), info, whoami, history
+- 🛠️ **5 MCP tools**: create, read, info, whoami, history
 - 🐍 **Standalone Python client** (`hedgedoc_mcp.client.HedgeDocClient`) usable outside MCP too
-- ✅ **Fully tested** — mocked HTTP, no live server required to run the test suite
+- ✅ **Fully tested** — against an in-process fake HedgeDoc server; no live instance required
 - 📦 **Works with any MCP client**: Claude Code, Codex, Hermes, Cursor, custom clients
 
 ## Quick start
@@ -60,12 +60,12 @@ uv pip install -e .          # or: pip install -e .
 HedgeDoc 1.x has no API tokens, so you authenticate once via the login endpoint and reuse the resulting session cookie:
 
 ```bash
-hedgedoc-mcp-login --url https://md.example.com \
-  --email you@example.com --password 'your-password' \
-  --write-env .env
+hedgedoc-mcp-login --url https://md.example.com --email you@example.com --write-env .env
 ```
 
-This prints (and optionally saves) `HEDGEDOC_SESSION_COOKIE=...`.
+It prompts for your password (or reads `HEDGEDOC_PASSWORD`; avoid `--password`, which lands in your shell history), then prints `HEDGEDOC_SESSION_COOKIE=...` and, with `--write-env`, saves it to a file readable only by you.
+
+The server does **not** read `.env` files itself — copy the value into your agent's MCP config (step 4), or load the file into your shell first (`set -a; source .env; set +a`).
 
 Alternatively, set `HEDGEDOC_EMAIL` + `HEDGEDOC_PASSWORD` directly and the server will log in automatically on first use, re-authenticating whenever the session expires — no manual refresh needed.
 
@@ -89,10 +89,14 @@ At minimum you need `HEDGEDOC_URL` plus either the cookie or the email+password 
 <summary><b>Claude Code</b></summary>
 
 ```bash
-claude mcp add hedgedoc -- uvx hedgedoc-mcp
+claude mcp add \
+  --env HEDGEDOC_URL=https://md.example.com \
+  --env HEDGEDOC_EMAIL=you@example.com \
+  --env HEDGEDOC_PASSWORD='your-password' \
+  hedgedoc -- uvx hedgedoc-mcp
 ```
 
-Or add to `.claude/mcp.json`:
+Or, to share the server with your team, add it to the project's `.mcp.json`. That file is meant to be committed, so reference secrets with `${VAR}` and let each person set them in their own environment:
 
 ```json
 {
@@ -102,8 +106,8 @@ Or add to `.claude/mcp.json`:
       "args": ["hedgedoc-mcp"],
       "env": {
         "HEDGEDOC_URL": "https://md.example.com",
-        "HEDGEDOC_EMAIL": "you@example.com",
-        "HEDGEDOC_PASSWORD": "your-password"
+        "HEDGEDOC_EMAIL": "${HEDGEDOC_EMAIL}",
+        "HEDGEDOC_PASSWORD": "${HEDGEDOC_PASSWORD}"
       }
     }
   }
@@ -136,7 +140,7 @@ Add an MCP server entry in your Hermes config with `command: uvx`, `args: [hedge
 <details>
 <summary><b>Any other MCP client</b></summary>
 
-This is a standard stdio MCP server. Point your client at `uvx hedgedoc-mcp` (or the installed `hedgedoc-mcp` executable) with the environment variables above set, and it will discover the 6 tools automatically via the standard MCP `list_tools` handshake. Using `uvx` means the client never needs a separate install step — `uv` downloads and caches the package on first run.
+This is a standard stdio MCP server. Point your client at `uvx hedgedoc-mcp` (or the installed `hedgedoc-mcp` executable) with the environment variables above set, and it will discover the 5 tools automatically via the standard MCP `list_tools` handshake. Using `uvx` means the client never needs a separate install step — `uv` downloads and caches the package on first run.
 
 </details>
 
@@ -146,10 +150,11 @@ This is a standard stdio MCP server. Point your client at `uvx hedgedoc-mcp` (or
 |---|---|
 | `hedgedoc_create_note` | Create a new note (optionally with a custom URL alias). Returns the note ID and URL. |
 | `hedgedoc_read_note` | Fetch a note's raw markdown content by ID or alias. |
-| `hedgedoc_update_note` | Reports that HedgeDoc 1.x HTTP note updates are unsupported; it does not modify the note. |
 | `hedgedoc_note_info` | Get a note's title, description, view count, and timestamps. |
 | `hedgedoc_whoami` | Verify the session is valid and show the logged-in user. |
 | `hedgedoc_list_history` | List the logged-in user's recently viewed/pinned notes. |
+
+There is no update tool: HedgeDoc 1.x has no HTTP endpoint for editing a note (see [Known limitations](#known-limitations)), so write a note's full content when creating it.
 
 ## Using the Python client directly
 
@@ -186,8 +191,9 @@ cd hedgedoc-mcp
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-pytest                 # run tests (fully mocked, no live server needed)
+pytest                 # run tests (against an in-process fake HedgeDoc; no live server needed)
 ruff check .            # lint
+ruff format --check .   # formatting
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the auth flow and MCP layer fit together, and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.

@@ -20,6 +20,7 @@ client transparently falls back to a fresh login if it has expired.
 from __future__ import annotations
 
 import argparse
+import getpass
 import os
 import re
 import sys
@@ -31,6 +32,7 @@ from .client import (
     HedgeDocClient,
     HedgeDocError,
     SessionExpiredError,
+    validate_base_url,
     validate_session_cookie_name,
 )
 
@@ -55,13 +57,18 @@ class Config:
                 "HEDGEDOC_URL is not set. Point it at your HedgeDoc instance, "
                 "e.g. HEDGEDOC_URL=https://md.example.com"
             )
+        try:
+            base_url = validate_base_url(base_url)
+        except HedgeDocError as e:
+            raise ConfigError(f"Invalid HEDGEDOC_URL: {e}") from e
 
         cookie = os.environ.get("HEDGEDOC_SESSION_COOKIE", "").strip() or None
         cookie_name = os.environ.get(
             "HEDGEDOC_SESSION_COOKIE_NAME", DEFAULT_SESSION_COOKIE_NAME
         ).strip()
         email = os.environ.get("HEDGEDOC_EMAIL", "").strip() or None
-        password = os.environ.get("HEDGEDOC_PASSWORD", "").strip() or None
+        # Not stripped: leading/trailing spaces can be part of a real password.
+        password = os.environ.get("HEDGEDOC_PASSWORD") or None
 
         if not cookie and not (email and password):
             raise ConfigError(
@@ -119,8 +126,9 @@ ENV_COOKIE_NAME_LINE = re.compile(r"^HEDGEDOC_SESSION_COOKIE_NAME=.*$", re.MULTI
 def cli_login() -> None:
     """Entry point for `hedgedoc-mcp-login`.
 
-    Logs in interactively (or via env vars / flags) and prints the resulting
-    session cookie, optionally writing it into a .env file for reuse.
+    Logs in via flags or env vars (prompting for the password if it isn't
+    given) and prints the resulting session cookie, optionally writing it into
+    a .env file for reuse.
     """
     parser = argparse.ArgumentParser(
         prog="hedgedoc-mcp-login",
@@ -129,7 +137,9 @@ def cli_login() -> None:
     parser.add_argument("--url", default=os.environ.get("HEDGEDOC_URL"), help="HedgeDoc base URL")
     parser.add_argument("--email", default=os.environ.get("HEDGEDOC_EMAIL"), help="Login email")
     parser.add_argument(
-        "--password", default=os.environ.get("HEDGEDOC_PASSWORD"), help="Login password"
+        "--password",
+        default=os.environ.get("HEDGEDOC_PASSWORD"),
+        help="Login password (prompted for if omitted; avoid passing it on the command line)",
     )
     parser.add_argument(
         "--session-cookie-name",
@@ -146,19 +156,21 @@ def cli_login() -> None:
     if not args.url:
         print("Error: --url or HEDGEDOC_URL is required", file=sys.stderr)
         sys.exit(1)
-    if not args.email or not args.password:
-        print(
-            "Error: --email/--password or HEDGEDOC_EMAIL/HEDGEDOC_PASSWORD required",
-            file=sys.stderr,
-        )
+    if not args.email:
+        print("Error: --email or HEDGEDOC_EMAIL is required", file=sys.stderr)
         sys.exit(1)
+    if not args.password:
+        if not sys.stdin.isatty():
+            print("Error: --password or HEDGEDOC_PASSWORD is required", file=sys.stderr)
+            sys.exit(1)
+        args.password = getpass.getpass(f"HedgeDoc password for {args.email}: ")
 
     try:
         client = HedgeDocClient(args.url, session_cookie_name=args.session_cookie_name)
+        client.login(args.email, args.password)
     except HedgeDocError as e:
-        print(f"Error: invalid session cookie name: {e}", file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-    client.login(args.email, args.password)
     cookie = client.get_session_cookie(encoded=True)
 
     print(f"HEDGEDOC_SESSION_COOKIE={cookie}")
@@ -183,5 +195,9 @@ def cli_login() -> None:
                 if text and not text.endswith("\n"):
                     text += "\n"
                 text += f"{name_line}\n"
-        path.write_text(text)
+        # The file holds a live session secret, so keep it readable by the owner only.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.chmod(path, 0o600)  # os.open's mode only applies when creating the file
         print(f"Written to {path}", file=sys.stderr)
