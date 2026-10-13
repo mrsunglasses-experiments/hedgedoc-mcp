@@ -36,9 +36,11 @@ FreeURL enabled, the first request for an alias creates the note; a second
 request for that alias returns **HTTP 409 Conflict** and leaves the original
 content unchanged.
 
-`hedgedoc_update_note` therefore reports a clear unsupported-operation error
-without issuing an HTTP request. Neither alias nor random-ID notes can be
-updated through HedgeDoc 1.x's HTTP surface. They can be edited in the
+This project therefore exposes no update tool, and `hedgedoc_create_note`'s
+description tells agents to write the complete content in one call. (The
+Python client keeps `HedgeDocClient.update_note()`, which raises a clear
+unsupported-operation error without issuing an HTTP request.) Neither alias
+nor random-ID notes can be updated through HedgeDoc 1.x's HTTP surface. They can be edited in the
 browser, which uses the Socket.IO collaborative-editing protocol; supporting
 that protocol is outside this HTTP client's current scope.
 
@@ -88,5 +90,5 @@ expires.
 | Update note (random-ID) | ❌ | Not possible over HTTP in HedgeDoc 1.x |
 | Delete note | ❌ | Only via the web UI, not exposed by this project |
 | Note metadata (title, views, dates) | ✅ | `hedgedoc_note_info` |
-| List revision history | 🟡 | `client.py` exposes it at the client level; not yet wired to an MCP tool |
+| List revision history | 🟡 | HedgeDoc has `GET /{note}/revision`; not implemented by this project yet |
 | API token auth | ❌ | Does not exist in HedgeDoc 1.x — use session cookie / login instead |

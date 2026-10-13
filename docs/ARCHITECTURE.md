@@ -5,7 +5,7 @@ This project has three layers, each independently usable:
 ```
 ┌─────────────────────────────────────────────┐
 │  MCP layer (server.py)                       │
-│  6 tools exposed via stdio JSON-RPC           │
+│  5 tools exposed via stdio JSON-RPC           │
 │  Used by: Claude Code, Codex, Hermes, etc.    │
 └───────────────────┬───────────────────────────┘
                      │
@@ -38,12 +38,18 @@ This project has three layers, each independently usable:
   `SessionExpiredError` handling automatic instead of something every
   caller has to reimplement.
 
-- **`server.py` is a thin MCP adapter.** It translates 6 tool calls into
-  `client.py` method calls and formats results as `TextContent`. It
+- **`server.py` is a thin MCP adapter.** Built on the SDK's `FastMCP`, it
+  turns 5 typed, docstring-described functions into tools whose input
+  schemas FastMCP generates, and each calls one `client.py` method. It
   contains exactly one piece of "real" logic: catching
   `SessionExpiredError` and retrying once after forcing a fresh
   `build_client()` call, so a single expired-cookie hiccup during a long
   agent session self-heals instead of failing the tool call outright.
+  Tool calls run one at a time in a worker thread (logging in is blocking
+  I/O, and the underlying `requests.Session` isn't thread-safe), and
+  failures are raised so FastMCP marks the result with `isError`. There
+  is no update tool, since HedgeDoc 1.x can't update notes over HTTP (see
+  [LIMITATIONS.md](LIMITATIONS.md)).
 
 ## Authentication flow in detail
 
@@ -110,19 +116,22 @@ interface — contributions welcome (see [CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## Testing strategy
 
-All 25 tests in `tests/` mock `requests.Session` methods directly (no
-`responses`/`httpretty` library, no live server) so the suite runs in
-under a second with zero external dependencies. This was a deliberate
-choice to keep CI fast and to make the auth fallback logic
-(`build_client`'s cookie→login flow) easy to test in isolation —
-see `tests/test_auth.py` for the four `build_client` scenarios (valid
-cookie, expired cookie + fallback, expired cookie + no fallback, no
-cookie at all).
+Most tests run against `tests/fake_hedgedoc.py`, a small in-process HTTP
+server that reproduces HedgeDoc 1.x's auth and note routes as written in
+its source: a session cookie on every response (including failed logins),
+a redirect to the home page for "forbidden" when logged out, HTML 403s
+when logged in, 409 for an existing alias. Because requests go over real
+HTTP, the tests exercise `requests`' cookie jar and redirect handling — the
+places where earlier, fully mocked tests let bugs through. The suite still
+needs no network access and runs in about a second.
 
-Live end-to-end verification (this project's server actually creating,
-reading, and updating notes on a real HedgeDoc instance, including a full
-MCP stdio JSON-RPC handshake) was performed manually during development
-against a live instance rather than committed as a test, since it requires
-real credentials. If you're contributing and want to add an opt-in
+`tests/test_auth.py` mocks `HedgeDocClient` to test `build_client`'s
+cookie→login fallback in isolation, and `tests/test_server.py` drives the
+real MCP request handler, including the re-login-and-retry path.
+
+Live end-to-end verification (creating and reading notes on a real
+HedgeDoc instance, including a full MCP stdio JSON-RPC handshake) was
+performed manually during development rather than committed as a test,
+since it requires real credentials. If you're contributing and want to add an opt-in
 live-integration test suite gated behind env vars, see
 [CONTRIBUTING.md](../CONTRIBUTING.md).

@@ -15,15 +15,16 @@ uv pip install -e ".[dev]"
 ## Running tests
 
 ```bash
-pytest              # all tests, mocked HTTP, no live server needed
-pytest -v            # verbose
-ruff check .          # lint
+pytest                 # all tests, against an in-process fake HedgeDoc
+pytest -v               # verbose
+ruff check .            # lint
+ruff format --check .   # formatting
 ```
 
-All 25+ tests should pass with zero network access. If you add a new
-`HedgeDocClient` method, add a corresponding mocked test in
-`tests/test_client.py` following the existing pattern (see `_FakeResponse`
-helper at the top of that file).
+All tests should pass with zero network access. If you add a new
+`HedgeDocClient` method, teach `tests/fake_hedgedoc.py` the endpoint
+(following HedgeDoc 1.x's real behaviour) and add a test in
+`tests/test_client.py` that uses the `hedgedoc` fixture.
 
 ## Project structure
 
@@ -31,10 +32,13 @@ helper at the top of that file).
 src/hedgedoc_mcp/
   client.py    # HTTP client, zero MCP dependencies — the reusable core
   auth.py      # env var config + cookie-first/login-fallback auth policy
-  server.py    # MCP server: 6 tools, thin adapter over client.py
+  server.py    # FastMCP server: 5 tools, thin adapter over client.py
 tests/
-  test_client.py   # mocked HTTP tests for client.py
-  test_auth.py      # config parsing + auth fallback logic tests
+  fake_hedgedoc.py  # in-process fake HedgeDoc 1.x server used by the tests
+  conftest.py       # `hedgedoc` fixture that runs the fake server
+  test_client.py    # client.py against the fake server
+  test_auth.py      # config parsing, auth fallback logic, login CLI
+  test_server.py    # MCP tool calls through the real request handler
 docs/
   ARCHITECTURE.md   # how the three layers fit together
   LIMITATIONS.md     # what HedgeDoc 1.x genuinely can't do over HTTP
@@ -45,16 +49,17 @@ docs/
 - **Keep `client.py` MCP-free.** It should always be usable as a
   standalone Python client with zero knowledge of the `mcp` package. If
   you're adding MCP-specific logic, it belongs in `server.py`.
-- **New client methods need mocked tests.** See the existing tests for the
+- **New client methods need tests.** See the existing tests for the
   pattern — no live HedgeDoc instance required to contribute.
 - **Match HedgeDoc's real API.** If you're not sure an endpoint exists,
   check the [official OpenAPI spec](https://docs.hedgedoc.org/dev/api/)
   first. Don't invent endpoints that don't exist in HedgeDoc 1.x — update
   `docs/LIMITATIONS.md` instead if something genuinely isn't possible.
-- **New MCP tools need a docstring-quality `description`.** Agents decide
-  whether to call a tool based on its description alone — be specific
-  about what it does and does not do (see `hedgedoc_update_note`'s
-  description for an example of documenting a real limitation inline).
+- **New MCP tools need a precise docstring.** FastMCP uses it as the tool
+  description, and agents decide whether to call a tool based on that alone —
+  be specific about what it does and does not do (see
+  `hedgedoc_create_note`'s note that content can't be edited afterwards).
+  Describe each parameter with `Annotated[..., Field(description=...)]`.
 
 ## Reporting HedgeDoc version incompatibilities
 

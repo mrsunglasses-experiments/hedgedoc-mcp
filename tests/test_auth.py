@@ -53,6 +53,27 @@ def test_config_from_env_rejects_invalid_cookie_name(monkeypatch):
         Config.from_env()
 
 
+@pytest.mark.parametrize("url", ["md.example.com", "localhost:3000"])
+def test_config_from_env_rejects_url_without_scheme(monkeypatch, url):
+    monkeypatch.setenv("HEDGEDOC_URL", url)
+    monkeypatch.setenv("HEDGEDOC_SESSION_COOKIE", "abc123")
+
+    with pytest.raises(ConfigError, match="Invalid HEDGEDOC_URL"):
+        Config.from_env()
+
+
+def test_config_from_env_keeps_password_whitespace(monkeypatch):
+    monkeypatch.setenv("HEDGEDOC_URL", "https://md.example.com/")
+    monkeypatch.delenv("HEDGEDOC_SESSION_COOKIE", raising=False)
+    monkeypatch.setenv("HEDGEDOC_EMAIL", "a@b.com")
+    monkeypatch.setenv("HEDGEDOC_PASSWORD", " secret ")
+
+    config = Config.from_env()
+
+    assert config.password == " secret "
+    assert config.base_url == "https://md.example.com"
+
+
 def test_config_from_env_with_login(monkeypatch):
     monkeypatch.setenv("HEDGEDOC_URL", "https://md.example.com")
     monkeypatch.delenv("HEDGEDOC_SESSION_COOKIE", raising=False)
@@ -177,3 +198,53 @@ def test_cli_login_writes_custom_cookie_name_to_env_file(monkeypatch, mocker, tm
     assert env_file.read_text() == (
         "HEDGEDOC_SESSION_COOKIE=s%3Acookie\nHEDGEDOC_SESSION_COOKIE_NAME=hedgedoc.sid\n"
     )
+
+
+def _cli_args(hedgedoc, *extra):
+    return ["hedgedoc-mcp-login", "--url", hedgedoc.url, "--email", "user@example.com", *extra]
+
+
+def test_cli_login_cookie_works_when_read_back_from_env(hedgedoc, monkeypatch, tmp_path, capsys):
+    env_file = tmp_path / ".env"
+    env_file.write_text("HEDGEDOC_URL=x\nHEDGEDOC_SESSION_COOKIE=old\n")
+    monkeypatch.setattr(
+        "sys.argv", _cli_args(hedgedoc, "--password", "hunter2", "--write-env", str(env_file))
+    )
+
+    auth.cli_login()
+
+    cookie_line = env_file.read_text().splitlines()[1]
+    assert cookie_line.startswith("HEDGEDOC_SESSION_COOKIE=s%3A")
+    assert "%25" not in cookie_line  # not double-encoded
+    assert capsys.readouterr().out.startswith(cookie_line)
+    assert env_file.stat().st_mode & 0o777 == 0o600
+
+    config = Config(
+        base_url=hedgedoc.url,
+        session_cookie=cookie_line.split("=", 1)[1],
+        email=None,
+        password=None,
+    )
+    assert build_client(config).whoami()["name"] == "user@example.com"
+
+
+def test_cli_login_failure_exits_cleanly(hedgedoc, monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", _cli_args(hedgedoc, "--password", "wrong"))
+
+    with pytest.raises(SystemExit) as excinfo:
+        auth.cli_login()
+
+    assert excinfo.value.code == 1
+    assert "Error: Login failed" in capsys.readouterr().err
+
+
+def test_cli_login_prompts_for_missing_password(hedgedoc, monkeypatch, mocker, capsys):
+    monkeypatch.delenv("HEDGEDOC_PASSWORD", raising=False)
+    monkeypatch.setattr("sys.argv", _cli_args(hedgedoc))
+    mocker.patch("sys.stdin.isatty", return_value=True)
+    prompt = mocker.patch("hedgedoc_mcp.auth.getpass.getpass", return_value="hunter2")
+
+    auth.cli_login()
+
+    prompt.assert_called_once()
+    assert capsys.readouterr().out.startswith("HEDGEDOC_SESSION_COOKIE=")

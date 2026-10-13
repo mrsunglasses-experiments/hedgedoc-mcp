@@ -5,8 +5,8 @@
       "args": ["hedgedoc-mcp"],
       "env": {
         "HEDGEDOC_URL": "https://md.example.com",
-        "HEDGEDOC_EMAIL": "you@example.com",
-        "HEDGEDOC_PASSWORD": "your-password"
+        "HEDGEDOC_EMAIL": "${HEDGEDOC_EMAIL}",
+        "HEDGEDOC_PASSWORD": "${HEDGEDOC_PASSWORD}"
       }
     }
   }

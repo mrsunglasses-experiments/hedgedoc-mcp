@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hedgedoc-mcp"
-version = "0.1.0"
+dynamic = ["version"]
 description = "MCP server for HedgeDoc 1.x — create, read, and manage notes on a self-hosted HedgeDoc instance from any MCP-compatible AI agent."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -26,7 +26,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "mcp>=1.2.0,<2.0.0",
+    "mcp>=1.10.0,<2.0.0",
     "requests>=2.31.0",
 ]
 
@@ -41,6 +41,9 @@ hedgedoc-mcp-login = "hedgedoc_mcp.auth:cli_login"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0", "pytest-mock>=3.12.0", "ruff>=0.4.0"]
+
+[tool.hatch.version]
+path = "src/hedgedoc_mcp/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hedgedoc_mcp"]
