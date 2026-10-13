@@ -1,4 +1,10 @@
+# ~/.codex/config.toml (also used by the ChatGPT desktop app).
+# Codex doesn't pass your shell environment to MCP servers: values come from
+# `env`, or from your environment for the names listed in `env_vars`.
 [mcp_servers.hedgedoc]
 command = "uvx"
 args = ["hedgedoc-mcp"]
-env = { HEDGEDOC_URL = "https://md.example.com", HEDGEDOC_EMAIL = "you@example.com", HEDGEDOC_PASSWORD = "your-password" }
+env_vars = ["HEDGEDOC_EMAIL", "HEDGEDOC_PASSWORD"]
+
+[mcp_servers.hedgedoc.env]
+HEDGEDOC_URL = "https://md.example.com"

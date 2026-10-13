@@ -41,7 +41,8 @@ tests/
   test_server.py    # MCP tool calls through the real request handler
 docs/
   ARCHITECTURE.md   # how the three layers fit together
-  LIMITATIONS.md     # what HedgeDoc 1.x genuinely can't do over HTTP
+  CLIENTS.md        # setup instructions for each MCP client
+  LIMITATIONS.md    # what HedgeDoc 1.x genuinely can't do over HTTP
 ```
 
 ## Guidelines
@@ -71,12 +72,31 @@ a real difference on another 1.x version, please include:
 - Whether the issue is in `POST /new`, `GET /{note}/download`,
   `GET /{note}/info`, `/me`, `/history`, or `/login`
 
-## Adding support for a new agent client
+## Adding or updating an agent client
 
-If you've wired this server into an agent not covered in the README (only
-Claude Code, Codex, and Hermes are documented today), a PR adding a
-`<details>` block with that agent's config format is very welcome — no
-code changes needed, just documentation.
+Setup instructions for each MCP client live in
+[docs/CLIENTS.md](docs/CLIENTS.md). Client config formats change often, so
+fixes are as welcome as new clients. A PR needs no code changes, just docs:
+
+- Add a section under the right group (terminal agents, editors and IDEs,
+  desktop apps), and link it from the list at the top of `docs/CLIENTS.md`
+  and from the client table in the README.
+- Use the standard example values (`https://md.example.com`,
+  `you@example.com`), and reference the password from the environment if
+  the client supports it. Add the client's syntax to the
+  "Keeping your password out of config files" table.
+- Link the client's official MCP docs. Only document config keys and CLI
+  flags you've checked there or tried yourself.
+
+## Releasing
+
+1. Bump `__version__` in `src/hedgedoc_mcp/__init__.py`. It's the only place
+   the version is set, and the build reads it from there.
+2. Merge that change to `main`.
+3. Create a GitHub release with the tag `v<version>` (e.g. `v0.3.0`) on that
+   commit. Publishing the release runs `.github/workflows/publish.yml`, which
+   uploads to PyPI. The workflow fails early if the tag and `__version__`
+   don't match.
 
 ## Code of conduct
 

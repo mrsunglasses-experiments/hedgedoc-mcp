@@ -1,6 +1,6 @@
 # hedgedoc-mcp
 
-An [MCP](https://modelcontextprotocol.io) server that lets AI agents — Claude Code, Codex, Hermes, or any MCP-compatible client — read and write notes on a **self-hosted HedgeDoc 1.x** instance.
+An [MCP](https://modelcontextprotocol.io) server that lets AI agents — Claude Code, Codex, Cursor, VS Code, OpenCode, Pi, or [any other MCP client](docs/CLIENTS.md) — read and write notes on a **self-hosted HedgeDoc 1.x** instance.
 
 HedgeDoc 1.x has no API token system, so this server handles the real auth model (session cookies from email/password login) and exposes it as a clean, agent-friendly toolset.
 
@@ -19,130 +19,85 @@ This project does the unglamorous work of handling that correctly — login, coo
 - 🛠️ **5 MCP tools**: create, read, info, whoami, history
 - 🐍 **Standalone Python client** (`hedgedoc_mcp.client.HedgeDocClient`) usable outside MCP too
 - ✅ **Fully tested** — against an in-process fake HedgeDoc server; no live instance required
-- 📦 **Works with any MCP client**: Claude Code, Codex, Hermes, Cursor, custom clients
+- 📦 **Works with any MCP client** — [setup guides for 20+ agents](docs/CLIENTS.md): Claude Code, Codex, Cursor, VS Code, OpenCode, Pi, Gemini CLI, Goose, Zed, and more
 
 ## Quick start
 
-### 1. Install
+### 1. Install uv
 
-**With [uv](https://docs.astral.sh/uv/) (recommended — no venv management needed):**
-
-```bash
-# Run directly without installing (uvx downloads + caches automatically)
-uvx hedgedoc-mcp
-
-# Or install as a persistent tool
-uv tool install hedgedoc-mcp
-```
-
-> **Not yet on PyPI?** Run straight from GitHub instead — same zero-install experience:
-> ```bash
-> uvx --from git+https://github.com/mrsunglasses-experiments/hedgedoc-mcp hedgedoc-mcp
-> ```
-> Use this exact form in the agent config examples below (as `args`) until the package is published.
-
-**With pip:**
+Your agent starts the server for you with [`uvx`](https://docs.astral.sh/uv/guides/tools/), which downloads and caches `hedgedoc-mcp` from PyPI on first use. You only need [uv installed](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```bash
-pip install hedgedoc-mcp
+curl -LsSf https://astral.sh/uv/install.sh | sh     # macOS / Linux
+# Windows: powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-**From source:**
-
-```bash
-git clone https://github.com/mrsunglasses-experiments/hedgedoc-mcp.git
-cd hedgedoc-mcp
-uv pip install -e .          # or: pip install -e .
-```
-
-### 2. Get a session cookie
-
-HedgeDoc 1.x has no API tokens, so you authenticate once via the login endpoint and reuse the resulting session cookie:
-
-```bash
-hedgedoc-mcp-login --url https://md.example.com --email you@example.com --write-env .env
-```
-
-It prompts for your password (or reads `HEDGEDOC_PASSWORD`; avoid `--password`, which lands in your shell history), then prints `HEDGEDOC_SESSION_COOKIE=...` and, with `--write-env`, saves it to a file readable only by you.
-
-The server does **not** read `.env` files itself — copy the value into your agent's MCP config (step 4), or load the file into your shell first (`set -a; source .env; set +a`).
-
-Alternatively, set `HEDGEDOC_EMAIL` + `HEDGEDOC_PASSWORD` directly and the server will log in automatically on first use, re-authenticating whenever the session expires — no manual refresh needed.
-
-### 3. Configure environment variables
-
-```bash
-export HEDGEDOC_URL=https://md.example.com
-export HEDGEDOC_SESSION_COOKIE=s%3A...          # from step 2, OR:
-export HEDGEDOC_SESSION_COOKIE_NAME=connect.sid  # only when your instance uses another name
-export HEDGEDOC_EMAIL=you@example.com            # for auto re-login
-export HEDGEDOC_PASSWORD=your-password
-```
-
-At minimum you need `HEDGEDOC_URL` plus either the cookie or the email+password pair. Setting both is recommended — the cookie is used as a fast path, and email/password is the automatic fallback whenever it expires.
-
-`HEDGEDOC_SESSION_COOKIE_NAME` defaults to `connect.sid`. Set it to the valid cookie name configured by your HedgeDoc instance (for example, `hedgedoc.sid`) so both login and manually supplied cookies use the right session.
-
-### 4. Wire it into your agent
+You don't run `uvx hedgedoc-mcp` yourself: it's a stdio server, so it just waits for an agent to talk to it.
 
 <details>
-<summary><b>Claude Code</b></summary>
+<summary>Other ways to install</summary>
 
 ```bash
-claude mcp add \
-  --env HEDGEDOC_URL=https://md.example.com \
-  --env HEDGEDOC_EMAIL=you@example.com \
-  --env HEDGEDOC_PASSWORD='your-password' \
-  hedgedoc -- uvx hedgedoc-mcp
-```
+uv tool install hedgedoc-mcp     # persistent install; point your agent at the `hedgedoc-mcp` executable
+pip install hedgedoc-mcp          # into an existing environment
 
-Or, to share the server with your team, add it to the project's `.mcp.json`. That file is meant to be committed, so reference secrets with `${VAR}` and let each person set them in their own environment:
-
-```json
-{
-  "mcpServers": {
-    "hedgedoc": {
-      "command": "uvx",
-      "args": ["hedgedoc-mcp"],
-      "env": {
-        "HEDGEDOC_URL": "https://md.example.com",
-        "HEDGEDOC_EMAIL": "${HEDGEDOC_EMAIL}",
-        "HEDGEDOC_PASSWORD": "${HEDGEDOC_PASSWORD}"
-      }
-    }
-  }
-}
+# Unreleased changes from the main branch:
+uvx --from git+https://github.com/mrsunglasses-experiments/hedgedoc-mcp hedgedoc-mcp
 ```
 
 </details>
 
+### 2. Choose your credentials
+
+The server is configured entirely through environment variables:
+
+| Variable | Required | Description |
+|---|---|---|
+| `HEDGEDOC_URL` | Yes | Your instance's URL as shown in the browser, e.g. `https://md.example.com` |
+| `HEDGEDOC_EMAIL` + `HEDGEDOC_PASSWORD` | One of these two options | Email/password login. The server logs in on first use and again whenever the session expires. |
+| `HEDGEDOC_SESSION_COOKIE` | One of these two options | A session cookie from `hedgedoc-mcp-login` (below). Saves a login round-trip; when it expires, the server falls back to email/password if those are set. |
+| `HEDGEDOC_SESSION_COOKIE_NAME` | No | Only if your instance uses a session cookie name other than `connect.sid` |
+
+**Recommended:** set `HEDGEDOC_EMAIL` and `HEDGEDOC_PASSWORD`. That's all you need, and you never have to refresh anything. Email login must be enabled on the instance (`CMD_EMAIL=true`, the default).
+
+**Set these in your agent's MCP config (step 3), not just in your shell.** Most agents start MCP servers with a minimal environment, so variables you `export` usually don't reach the server.
+
 <details>
-<summary><b>Codex CLI</b></summary>
+<summary>Optional: get a session cookie with <code>hedgedoc-mcp-login</code></summary>
 
-Add to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.hedgedoc]
-command = "uvx"
-args = ["hedgedoc-mcp"]
-env = { HEDGEDOC_URL = "https://md.example.com", HEDGEDOC_EMAIL = "you@example.com", HEDGEDOC_PASSWORD = "your-password" }
+```bash
+uvx --from hedgedoc-mcp hedgedoc-mcp-login --url https://md.example.com --email you@example.com
 ```
 
-</details>
-
-<details>
-<summary><b>Hermes</b></summary>
-
-Add an MCP server entry in your Hermes config with `command: uvx`, `args: [hedgedoc-mcp]`, and the same environment variables. See the [Hermes MCP docs](https://docs.hermes.dev) for the exact config location on your install.
+It prompts for your password (or reads `HEDGEDOC_PASSWORD`; avoid `--password`, which lands in your shell history) and prints `HEDGEDOC_SESSION_COOKIE=...` for your agent's config. With `--write-env .env`, it also saves the value to a file readable only by you. The server doesn't read `.env` files itself.
 
 </details>
 
-<details>
-<summary><b>Any other MCP client</b></summary>
+### 3. Connect your agent
 
-This is a standard stdio MCP server. Point your client at `uvx hedgedoc-mcp` (or the installed `hedgedoc-mcp` executable) with the environment variables above set, and it will discover the 5 tools automatically via the standard MCP `list_tools` handshake. Using `uvx` means the client never needs a separate install step — `uv` downloads and caches the package on first run.
+For **Claude Code**:
 
-</details>
+```bash
+claude mcp add hedgedoc --scope user \
+  -e HEDGEDOC_URL=https://md.example.com \
+  -e HEDGEDOC_EMAIL=you@example.com \
+  -e HEDGEDOC_PASSWORD='your-password' \
+  -- uvx hedgedoc-mcp
+```
+
+Most other agents take the same three pieces of information: command `uvx`, argument `hedgedoc-mcp`, and the environment variables above. Config files and formats differ, though. **[docs/CLIENTS.md](docs/CLIENTS.md)** has a ready-to-paste config for each of these clients:
+
+| | |
+|---|---|
+| **Terminal agents** | [Claude Code](docs/CLIENTS.md#claude-code) · [Codex CLI](docs/CLIENTS.md#codex-cli) · [Gemini CLI](docs/CLIENTS.md#gemini-cli) · [GitHub Copilot CLI](docs/CLIENTS.md#github-copilot-cli) · [OpenCode](docs/CLIENTS.md#opencode) · [Pi](docs/CLIENTS.md#pi) · [Amp](docs/CLIENTS.md#amp) · [Goose](docs/CLIENTS.md#goose) · [Crush](docs/CLIENTS.md#crush) · [Hermes Agent](docs/CLIENTS.md#hermes-agent) · [Factory Droid](docs/CLIENTS.md#factory-droid) · [Qwen Code](docs/CLIENTS.md#qwen-code) · [Devin CLI](docs/CLIENTS.md#devin-desktop-and-devin-cli) |
+| **Editors and IDEs** | [Cursor](docs/CLIENTS.md#cursor) · [VS Code (Copilot)](docs/CLIENTS.md#vs-code-github-copilot) · [Devin Desktop (Windsurf)](docs/CLIENTS.md#devin-desktop-and-devin-cli) · [Zed](docs/CLIENTS.md#zed) · [JetBrains](docs/CLIENTS.md#jetbrains-ides) · [Cline](docs/CLIENTS.md#cline) · [Kilo Code](docs/CLIENTS.md#kilo-code) · [Continue](docs/CLIENTS.md#continue) · [Kiro](docs/CLIENTS.md#kiro) |
+| **Desktop apps** | [Claude Desktop](docs/CLIENTS.md#claude-desktop) · [ChatGPT desktop](docs/CLIENTS.md#chatgpt-desktop) · [Warp](docs/CLIENTS.md#warp) · [LM Studio](docs/CLIENTS.md#lm-studio) |
+
+The guide also covers keeping passwords out of config files that get committed, plus [troubleshooting](docs/CLIENTS.md#troubleshooting).
+
+### 4. Try it
+
+Ask your agent something like *"Create a HedgeDoc note summarizing this conversation"* or *"Which HedgeDoc account are you logged in as?"*. If the tools don't show up, check the setup with [MCP Inspector](docs/CLIENTS.md#testing-with-mcp-inspector), which runs the server outside any agent.
 
 ## Available tools
 
